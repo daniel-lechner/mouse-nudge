@@ -36,7 +36,7 @@ dotnet run
 Build the portable single-file exe:
 
 ```
-dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true --self-contained true
+dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true --self-contained true
 ```
 
 The resulting `.exe` lands in `bin\Release\net10.0-windows\win-x64\publish\` and can be copied anywhere and started directly.
