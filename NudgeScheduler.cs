@@ -2,15 +2,21 @@ namespace mouse_nudge;
 
 sealed class NudgeScheduler : IDisposable
 {
+    const int SelfInputToleranceMs = 500;
+
     readonly AppSettings settings;
     readonly MouseNudger nudger = new();
     readonly System.Windows.Forms.Timer timer;
 
     int secondsRemaining;
     bool isNudging;
+    bool isPaused;
+    bool hasSelfInput;
+    uint lastSelfInputTick;
 
     public event Action<int>? CountdownChanged;
     public event Action<bool>? StateChanged;
+    public event Action<bool>? PauseChanged;
 
     public NudgeScheduler(AppSettings settings)
     {
@@ -21,6 +27,8 @@ sealed class NudgeScheduler : IDisposable
     }
 
     public bool IsRunning => timer.Enabled;
+
+    public bool IsPaused => isPaused;
 
     public void Start()
     {
@@ -46,6 +54,7 @@ sealed class NudgeScheduler : IDisposable
 
         timer.Stop();
         ClearExecutionState();
+        isPaused = false;
 
         StateChanged?.Invoke(false);
     }
@@ -53,6 +62,24 @@ sealed class NudgeScheduler : IDisposable
     void OnTick(object? sender, EventArgs e)
     {
         ApplyExecutionState();
+
+        bool shouldPause = settings.PauseWhileActive && !isNudging && IsUserActive();
+
+        if (shouldPause != isPaused)
+        {
+            isPaused = shouldPause;
+            PauseChanged?.Invoke(isPaused);
+
+            if (!isPaused)
+            {
+                CountdownChanged?.Invoke(secondsRemaining);
+            }
+        }
+
+        if (isPaused)
+        {
+            return;
+        }
 
         secondsRemaining--;
 
@@ -102,8 +129,29 @@ sealed class NudgeScheduler : IDisposable
         }
         finally
         {
+            lastSelfInputTick = (uint)Environment.TickCount;
+            hasSelfInput = true;
             isNudging = false;
         }
+    }
+
+    bool IsUserActive()
+    {
+        uint lastInput = IdleDetector.GetLastInputTick();
+        uint now = (uint)Environment.TickCount;
+        uint idleMs = unchecked(now - lastInput);
+
+        if (idleMs >= (uint)settings.ResumeDelaySeconds * 1000)
+        {
+            return false;
+        }
+
+        if (hasSelfInput && unchecked((int)(lastInput - lastSelfInputTick)) <= SelfInputToleranceMs)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     void ScheduleNext()

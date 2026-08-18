@@ -3,6 +3,7 @@ namespace mouse_nudge;
 sealed class TrayAppContext : ApplicationContext
 {
     const string StoppedTooltip = "Mouse Nudge — stopped";
+    const string PausedTooltip = "Mouse Nudge — paused (you're active)";
 
     readonly NotifyIcon notifyIcon;
     readonly ToolStripMenuItem toggleItem;
@@ -45,6 +46,7 @@ sealed class TrayAppContext : ApplicationContext
         scheduler = new NudgeScheduler(settings);
         scheduler.StateChanged += OnSchedulerStateChanged;
         scheduler.CountdownChanged += OnCountdownChanged;
+        scheduler.PauseChanged += OnSchedulerPauseChanged;
 
         ShowBalloon("Mouse Nudge", "Running in the system tray — right-click the icon for options.");
 
@@ -82,8 +84,24 @@ sealed class TrayAppContext : ApplicationContext
         }
     }
 
+    void OnSchedulerPauseChanged(bool isPaused)
+    {
+        if (!isPaused)
+        {
+            return;
+        }
+
+        countdownRenderer.ApplyPaused(notifyIcon);
+        notifyIcon.Text = PausedTooltip;
+    }
+
     void OnCountdownChanged(int secondsRemaining)
     {
+        if (scheduler.IsPaused)
+        {
+            return;
+        }
+
         countdownRenderer.Apply(notifyIcon, secondsRemaining);
         notifyIcon.Text = $"Mouse Nudge — next nudge in {Math.Max(0, secondsRemaining)}s";
     }

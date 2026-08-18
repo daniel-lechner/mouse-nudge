@@ -15,6 +15,8 @@ sealed class OptionsForm : Form
     readonly RadioButton awakeRadio = CreateRadioButton("Keep awake only (no cursor movement)", false);
     readonly CheckBox idleOnlyCheckBox = CreateCheckBox("Only nudge when user is idle", true);
     readonly NumericUpDown idleThresholdUpDown = CreateUpDown(5, 600, 60);
+    readonly CheckBox pauseWhileActiveCheckBox = CreateCheckBox("Pause countdown while user is active", true);
+    readonly NumericUpDown resumeDelayUpDown = CreateUpDown(1, 600, 10);
     readonly CheckBox startOnLaunchCheckBox = CreateCheckBox("Start nudging when app launches", false);
     readonly CheckBox showNotificationsCheckBox = CreateCheckBox("Show tray notification on start/stop", true);
     readonly Button previewButton = new()
@@ -24,6 +26,12 @@ sealed class OptionsForm : Form
         MinimumSize = new Size(120, 28),
         Anchor = AnchorStyles.Left,
         Margin = new Padding(0, 8, 8, 2)
+    };
+    readonly ToolTip toolTip = new()
+    {
+        AutoPopDelay = 15000,
+        InitialDelay = 400,
+        ReshowDelay = 200
     };
     readonly MouseNudger nudger = new();
     readonly AppSettings settings;
@@ -158,31 +166,45 @@ sealed class OptionsForm : Form
         grid.SetColumnSpan(control, 3);
     }
 
+    void SetTip(Control control, string text) => toolTip.SetToolTip(control, text);
+
+    void AddRow(TableLayoutPanel grid, int row, string labelText, Control input, Control trailing, string tip, int indent = 0)
+    {
+        Label label = CreateLabel(labelText);
+        label.Margin = new Padding(indent, 6, 8, 6);
+
+        grid.Controls.Add(label, 0, row);
+        grid.Controls.Add(input, 1, row);
+        grid.Controls.Add(trailing, 2, row);
+
+        SetTip(label, tip);
+        SetTip(input, tip);
+    }
+
+    void AddRow(TableLayoutPanel grid, int row, string labelText, Control input, string unit, string tip, int indent = 0) =>
+        AddRow(grid, row, labelText, input, CreateLabel(unit), tip, indent);
+
+    void AddCheckRow(TableLayoutPanel grid, Control control, int row, string tip)
+    {
+        AddFullWidth(grid, control, row);
+        SetTip(control, tip);
+    }
+
     GroupBox BuildBehaviorGroup()
     {
         TableLayoutPanel grid = CreateGrid(8);
 
-        grid.Controls.Add(CreateLabel("Interval"), 0, 0);
-        grid.Controls.Add(intervalUpDown, 1, 0);
-        grid.Controls.Add(CreateLabel("seconds"), 2, 0);
+        AddRow(grid, 0, "Interval", intervalUpDown, "seconds", "How often the mouse is nudged. The countdown in the tray icon shows the time until the next nudge.");
+        AddRow(grid, 1, "Interval jitter", jitterTrackBar, jitterValueLabel, "Randomly varies each interval by up to this percentage so the nudges look less mechanical.");
+        AddRow(grid, 2, "Distance", distanceTrackBar, distanceValueLabel, "How far the cursor moves during a nudge, in pixels.");
 
-        grid.Controls.Add(CreateLabel("Interval jitter"), 0, 1);
-        grid.Controls.Add(jitterTrackBar, 1, 1);
-        grid.Controls.Add(jitterValueLabel, 2, 1);
+        AddCheckRow(grid, randomDirectionCheckBox, 3, "Move the cursor in a random direction each time instead of always to the right.");
+        AddCheckRow(grid, returnToOriginCheckBox, 4, "After nudging, move the cursor back to where it was.");
+        AddCheckRow(grid, smoothMovementCheckBox, 5, "Glide the cursor to its target instead of jumping instantly.");
 
-        grid.Controls.Add(CreateLabel("Distance"), 0, 2);
-        grid.Controls.Add(distanceTrackBar, 1, 2);
-        grid.Controls.Add(distanceValueLabel, 2, 2);
+        AddRow(grid, 6, "Screen edge padding", edgePaddingUpDown, "px", "Keeps nudges away from the screen edges by this many pixels so nothing at the border gets clicked or triggered.");
 
-        AddFullWidth(grid, randomDirectionCheckBox, 3);
-        AddFullWidth(grid, returnToOriginCheckBox, 4);
-        AddFullWidth(grid, smoothMovementCheckBox, 5);
-
-        grid.Controls.Add(CreateLabel("Screen edge padding"), 0, 6);
-        grid.Controls.Add(edgePaddingUpDown, 1, 6);
-        grid.Controls.Add(CreateLabel("px"), 2, 6);
-
-        AddFullWidth(grid, previewButton, 7);
+        AddCheckRow(grid, previewButton, 7, "Performs one nudge right now with the current settings.");
 
         GroupBox group = CreateGroupBox("Nudge behavior");
         group.Controls.Add(grid);
@@ -191,17 +213,17 @@ sealed class OptionsForm : Form
 
     GroupBox BuildModeGroup()
     {
-        TableLayoutPanel grid = CreateGrid(4);
+        TableLayoutPanel grid = CreateGrid(6);
 
-        AddFullWidth(grid, nudgeRadio, 0);
-        AddFullWidth(grid, awakeRadio, 1);
-        AddFullWidth(grid, idleOnlyCheckBox, 2);
+        AddCheckRow(grid, nudgeRadio, 0, "Physically moves the mouse cursor at each interval.");
+        AddCheckRow(grid, awakeRadio, 1, "Doesn't move the cursor; instead tells Windows to stay awake and keep the display on.");
+        AddCheckRow(grid, idleOnlyCheckBox, 2, "Skips a nudge if you used mouse or keyboard within the idle threshold. The countdown keeps running; only the nudge itself is skipped.");
 
-        Label idleLabel = CreateLabel("Idle threshold");
-        idleLabel.Margin = new Padding(18, 6, 8, 6);
-        grid.Controls.Add(idleLabel, 0, 3);
-        grid.Controls.Add(idleThresholdUpDown, 1, 3);
-        grid.Controls.Add(CreateLabel("seconds"), 2, 3);
+        AddRow(grid, 3, "Idle threshold", idleThresholdUpDown, "seconds", "How long you must be inactive before a due nudge is actually performed.", 18);
+
+        AddCheckRow(grid, pauseWhileActiveCheckBox, 4, "Freezes the countdown while you're using mouse or keyboard. A pause symbol is shown in the tray icon.");
+
+        AddRow(grid, 5, "Resume after", resumeDelayUpDown, "seconds of inactivity", "How long you must be inactive before the paused countdown continues.", 18);
 
         GroupBox group = CreateGroupBox("Mode");
         group.Controls.Add(grid);
@@ -211,8 +233,8 @@ sealed class OptionsForm : Form
     GroupBox BuildApplicationGroup()
     {
         TableLayoutPanel grid = CreateGrid(2);
-        AddFullWidth(grid, startOnLaunchCheckBox, 0);
-        AddFullWidth(grid, showNotificationsCheckBox, 1);
+        AddCheckRow(grid, startOnLaunchCheckBox, 0, "Begin nudging automatically as soon as the app starts.");
+        AddCheckRow(grid, showNotificationsCheckBox, 1, "Show a small balloon notification when nudging starts or stops.");
 
         GroupBox group = CreateGroupBox("Application");
         group.Controls.Add(grid);
@@ -258,12 +280,15 @@ sealed class OptionsForm : Form
         nudgeRadio.Checked = !settings.KeepAwakeOnly;
         idleOnlyCheckBox.Checked = settings.NudgeOnlyWhenIdle;
         idleThresholdUpDown.Value = settings.IdleThresholdSeconds;
+        pauseWhileActiveCheckBox.Checked = settings.PauseWhileActive;
+        resumeDelayUpDown.Value = settings.ResumeDelaySeconds;
         startOnLaunchCheckBox.Checked = settings.StartOnLaunch;
         showNotificationsCheckBox.Checked = settings.ShowTrayNotifications;
 
         UpdateJitterLabel();
         UpdateDistanceLabel();
         UpdateIdleThresholdEnabled();
+        UpdateResumeDelayEnabled();
     }
 
     void WireEvents()
@@ -295,6 +320,14 @@ sealed class OptionsForm : Form
         };
 
         idleThresholdUpDown.ValueChanged += (_, _) => Persist(() => settings.IdleThresholdSeconds = (int)idleThresholdUpDown.Value);
+
+        pauseWhileActiveCheckBox.CheckedChanged += (_, _) =>
+        {
+            UpdateResumeDelayEnabled();
+            Persist(() => settings.PauseWhileActive = pauseWhileActiveCheckBox.Checked);
+        };
+
+        resumeDelayUpDown.ValueChanged += (_, _) => Persist(() => settings.ResumeDelaySeconds = (int)resumeDelayUpDown.Value);
         startOnLaunchCheckBox.CheckedChanged += (_, _) => Persist(() => settings.StartOnLaunch = startOnLaunchCheckBox.Checked);
         showNotificationsCheckBox.CheckedChanged += (_, _) => Persist(() => settings.ShowTrayNotifications = showNotificationsCheckBox.Checked);
 
@@ -340,9 +373,21 @@ sealed class OptionsForm : Form
         }
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            toolTip.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+
     void UpdateJitterLabel() => jitterValueLabel.Text = $"±{jitterTrackBar.Value} %";
 
     void UpdateDistanceLabel() => distanceValueLabel.Text = $"{distanceTrackBar.Value} px";
 
     void UpdateIdleThresholdEnabled() => idleThresholdUpDown.Enabled = idleOnlyCheckBox.Checked;
+
+    void UpdateResumeDelayEnabled() => resumeDelayUpDown.Enabled = pauseWhileActiveCheckBox.Checked;
 }

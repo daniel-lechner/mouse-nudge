@@ -17,6 +17,36 @@ sealed class CountdownIconRenderer : IDisposable
     {
         string text = FormatRemaining(secondsRemaining);
 
+        Render(notifyIcon, graphics =>
+        {
+            using Font font = new("Segoe UI", GetFontSize(text.Length), FontStyle.Bold, GraphicsUnit.Point);
+            using StringFormat format = new()
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center
+            };
+
+            graphics.DrawString(text, font, Brushes.White, new RectangleF(0, 0, IconSize, IconSize), format);
+        });
+    }
+
+    public void ApplyPaused(NotifyIcon notifyIcon) => Render(notifyIcon, graphics =>
+    {
+        const float barWidth = 5f;
+        const float barHeight = 14f;
+        const float gap = 4f;
+
+        float top = (IconSize - barHeight) / 2f;
+        float left = (IconSize - ((barWidth * 2) + gap)) / 2f;
+
+        graphics.FillRectangle(Brushes.White, left, top, barWidth, barHeight);
+        graphics.FillRectangle(Brushes.White, left + barWidth + gap, top, barWidth, barHeight);
+    });
+
+    public void Release() => ReleaseCurrent();
+
+    void Render(NotifyIcon notifyIcon, Action<Graphics> drawContent)
+    {
         using Bitmap bitmap = new(IconSize, IconSize, PixelFormat.Format32bppArgb);
 
         using (Graphics graphics = Graphics.FromImage(bitmap))
@@ -28,14 +58,7 @@ sealed class CountdownIconRenderer : IDisposable
             using SolidBrush background = new(BackgroundColor);
             graphics.FillEllipse(background, 0, 0, IconSize - 1, IconSize - 1);
 
-            using Font font = new("Segoe UI", GetFontSize(text.Length), FontStyle.Bold, GraphicsUnit.Point);
-            using StringFormat format = new()
-            {
-                Alignment = StringAlignment.Center,
-                LineAlignment = StringAlignment.Center
-            };
-
-            graphics.DrawString(text, font, Brushes.White, new RectangleF(0, 0, IconSize, IconSize), format);
+            drawContent(graphics);
         }
 
         nint handle = bitmap.GetHicon();
@@ -48,8 +71,6 @@ sealed class CountdownIconRenderer : IDisposable
         currentIcon = icon;
         currentHandle = handle;
     }
-
-    public void Release() => ReleaseCurrent();
 
     static string FormatRemaining(int secondsRemaining)
     {

@@ -12,6 +12,8 @@ sealed class AppSettings
     public bool KeepAwakeOnly { get; set; }
     public bool NudgeOnlyWhenIdle { get; set; }
     public int IdleThresholdSeconds { get; set; } = 60;
+    public bool PauseWhileActive { get; set; } = true;
+    public int ResumeDelaySeconds { get; set; } = 10;
     public bool StartOnLaunch { get; set; }
     public bool ShowTrayNotifications { get; set; } = true;
 }

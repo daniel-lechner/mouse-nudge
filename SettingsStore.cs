@@ -49,6 +49,7 @@ static class SettingsStore
         settings.DistancePixels = Math.Clamp(settings.DistancePixels, 1, 100);
         settings.EdgePaddingPixels = Math.Clamp(settings.EdgePaddingPixels, 0, 500);
         settings.IdleThresholdSeconds = Math.Clamp(settings.IdleThresholdSeconds, 5, 600);
+        settings.ResumeDelaySeconds = Math.Clamp(settings.ResumeDelaySeconds, 1, 600);
 
         return settings;
     }
