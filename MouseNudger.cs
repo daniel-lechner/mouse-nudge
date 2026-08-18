@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace mouse_nudge;
 
 sealed record NudgeOptions(int Distance, bool RandomDirection, bool ReturnToOrigin, bool Smooth, int EdgePadding);
@@ -65,5 +67,27 @@ sealed class MouseNudger
     static double EaseInOutCubic(double t) =>
         t < 0.5 ? 4 * t * t * t : 1 - (Math.Pow((-2 * t) + 2, 3) / 2);
 
-    static void SetCursorPosition(Point position) => Cursor.Position = position;
+    static void SetCursorPosition(Point position)
+    {
+        int virtualLeft = NativeMethods.GetSystemMetrics(NativeMethods.SmXVirtualScreen);
+        int virtualTop = NativeMethods.GetSystemMetrics(NativeMethods.SmYVirtualScreen);
+        int virtualWidth = Math.Max(1, NativeMethods.GetSystemMetrics(NativeMethods.SmCxVirtualScreen));
+        int virtualHeight = Math.Max(1, NativeMethods.GetSystemMetrics(NativeMethods.SmCyVirtualScreen));
+
+        Input input = new()
+        {
+            Type = NativeMethods.InputMouse,
+            Mouse = new MouseInput
+            {
+                Dx = Normalize(position.X - virtualLeft, virtualWidth),
+                Dy = Normalize(position.Y - virtualTop, virtualHeight),
+                Flags = NativeMethods.MouseEventMove | NativeMethods.MouseEventAbsolute | NativeMethods.MouseEventVirtualDesk
+            }
+        };
+
+        NativeMethods.SendInput(1, ref input, Marshal.SizeOf<Input>());
+    }
+
+    static int Normalize(int offset, int extent) =>
+        extent <= 1 ? 0 : (int)Math.Round(offset * 65535.0 / (extent - 1));
 }

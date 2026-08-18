@@ -2,16 +2,21 @@ namespace mouse_nudge;
 
 sealed class OptionsForm : Form
 {
+    readonly NumericUpDown intervalUpDown = CreateUpDown(1, 3600, 30);
     readonly TrackBar jitterTrackBar = CreateTrackBar(0, 50, 0);
     readonly Label jitterValueLabel = CreateValueLabel();
     readonly TrackBar distanceTrackBar = CreateTrackBar(1, 100, 10);
     readonly Label distanceValueLabel = CreateValueLabel();
-    readonly CheckBox idleOnlyCheckBox = CreateCheckBox("Only nudge when user is idle", true);
-    readonly NumericUpDown idleThresholdUpDown = CreateUpDown(5, 600, 60);
     readonly CheckBox randomDirectionCheckBox = CreateCheckBox("Random direction", true);
     readonly CheckBox returnToOriginCheckBox = CreateCheckBox("Return cursor to original position", true);
     readonly CheckBox smoothMovementCheckBox = CreateCheckBox("Smooth movement", true);
     readonly NumericUpDown edgePaddingUpDown = CreateUpDown(0, 500, 50);
+    readonly RadioButton nudgeRadio = CreateRadioButton("Move cursor (nudge)", true);
+    readonly RadioButton awakeRadio = CreateRadioButton("Keep awake only (no cursor movement)", false);
+    readonly CheckBox idleOnlyCheckBox = CreateCheckBox("Only nudge when user is idle", true);
+    readonly NumericUpDown idleThresholdUpDown = CreateUpDown(5, 600, 60);
+    readonly CheckBox startOnLaunchCheckBox = CreateCheckBox("Start nudging when app launches", false);
+    readonly CheckBox showNotificationsCheckBox = CreateCheckBox("Show tray notification on start/stop", true);
     readonly Button previewButton = new()
     {
         Text = "Preview nudge",
@@ -21,9 +26,14 @@ sealed class OptionsForm : Form
         Margin = new Padding(0, 8, 8, 2)
     };
     readonly MouseNudger nudger = new();
+    readonly AppSettings settings;
 
-    public OptionsForm()
+    bool isLoading = true;
+
+    public OptionsForm(AppSettings settings)
     {
+        this.settings = settings;
+
         Text = "Mouse Nudge — Options";
         Icon = AppIcon.Load();
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -52,6 +62,11 @@ sealed class OptionsForm : Form
         root.Controls.Add(BuildButtons(), 0, 3);
 
         Controls.Add(root);
+
+        ApplySettingsToControls();
+        WireEvents();
+
+        isLoading = false;
     }
 
     static GroupBox CreateGroupBox(string text) => new()
@@ -128,6 +143,15 @@ sealed class OptionsForm : Form
         Margin = new Padding(0, 6, 8, 6)
     };
 
+    static RadioButton CreateRadioButton(string text, bool isChecked) => new()
+    {
+        Text = text,
+        Checked = isChecked,
+        AutoSize = true,
+        Anchor = AnchorStyles.Left,
+        Margin = new Padding(0, 6, 8, 6)
+    };
+
     static void AddFullWidth(TableLayoutPanel grid, Control control, int row)
     {
         grid.Controls.Add(control, 0, row);
@@ -138,19 +162,14 @@ sealed class OptionsForm : Form
     {
         TableLayoutPanel grid = CreateGrid(8);
 
-        NumericUpDown intervalUpDown = CreateUpDown(1, 3600, 30);
         grid.Controls.Add(CreateLabel("Interval"), 0, 0);
         grid.Controls.Add(intervalUpDown, 1, 0);
         grid.Controls.Add(CreateLabel("seconds"), 2, 0);
 
-        jitterTrackBar.Scroll += (_, _) => UpdateJitterLabel();
-        UpdateJitterLabel();
         grid.Controls.Add(CreateLabel("Interval jitter"), 0, 1);
         grid.Controls.Add(jitterTrackBar, 1, 1);
         grid.Controls.Add(jitterValueLabel, 2, 1);
 
-        distanceTrackBar.Scroll += (_, _) => UpdateDistanceLabel();
-        UpdateDistanceLabel();
         grid.Controls.Add(CreateLabel("Distance"), 0, 2);
         grid.Controls.Add(distanceTrackBar, 1, 2);
         grid.Controls.Add(distanceValueLabel, 2, 2);
@@ -163,7 +182,6 @@ sealed class OptionsForm : Form
         grid.Controls.Add(edgePaddingUpDown, 1, 6);
         grid.Controls.Add(CreateLabel("px"), 2, 6);
 
-        previewButton.Click += OnPreviewClicked;
         AddFullWidth(grid, previewButton, 7);
 
         GroupBox group = CreateGroupBox("Nudge behavior");
@@ -175,28 +193,9 @@ sealed class OptionsForm : Form
     {
         TableLayoutPanel grid = CreateGrid(4);
 
-        RadioButton nudgeRadio = new()
-        {
-            Text = "Move cursor (nudge)",
-            Checked = true,
-            AutoSize = true,
-            Anchor = AnchorStyles.Left,
-            Margin = new Padding(0, 6, 8, 6)
-        };
-        RadioButton awakeRadio = new()
-        {
-            Text = "Keep awake only (no cursor movement)",
-            AutoSize = true,
-            Anchor = AnchorStyles.Left,
-            Margin = new Padding(0, 6, 8, 6)
-        };
         AddFullWidth(grid, nudgeRadio, 0);
         AddFullWidth(grid, awakeRadio, 1);
-
-        idleOnlyCheckBox.CheckedChanged += (_, _) => UpdateIdleThresholdEnabled();
         AddFullWidth(grid, idleOnlyCheckBox, 2);
-
-        UpdateIdleThresholdEnabled();
 
         Label idleLabel = CreateLabel("Idle threshold");
         idleLabel.Margin = new Padding(18, 6, 8, 6);
@@ -209,11 +208,11 @@ sealed class OptionsForm : Form
         return group;
     }
 
-    static GroupBox BuildApplicationGroup()
+    GroupBox BuildApplicationGroup()
     {
         TableLayoutPanel grid = CreateGrid(2);
-        AddFullWidth(grid, CreateCheckBox("Start nudging when app launches", false), 0);
-        AddFullWidth(grid, CreateCheckBox("Show tray notification on start/stop", true), 1);
+        AddFullWidth(grid, startOnLaunchCheckBox, 0);
+        AddFullWidth(grid, showNotificationsCheckBox, 1);
 
         GroupBox group = CreateGroupBox("Application");
         group.Controls.Add(grid);
@@ -222,28 +221,17 @@ sealed class OptionsForm : Form
 
     FlowLayoutPanel BuildButtons()
     {
-        Button okButton = new()
+        Button closeButton = new()
         {
-            Text = "OK",
-            DialogResult = DialogResult.OK,
+            Text = "Close",
             AutoSize = true,
             MinimumSize = new Size(90, 28),
             Margin = new Padding(8, 0, 0, 0)
         };
-        okButton.Click += (_, _) => Close();
+        closeButton.Click += (_, _) => Close();
 
-        Button cancelButton = new()
-        {
-            Text = "Cancel",
-            DialogResult = DialogResult.Cancel,
-            AutoSize = true,
-            MinimumSize = new Size(90, 28),
-            Margin = new Padding(8, 0, 0, 0)
-        };
-        cancelButton.Click += (_, _) => Close();
-
-        AcceptButton = okButton;
-        CancelButton = cancelButton;
+        AcceptButton = closeButton;
+        CancelButton = closeButton;
 
         FlowLayoutPanel panel = new()
         {
@@ -253,9 +241,75 @@ sealed class OptionsForm : Form
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Margin = new Padding(0, 4, 0, 0)
         };
-        panel.Controls.Add(cancelButton);
-        panel.Controls.Add(okButton);
+        panel.Controls.Add(closeButton);
         return panel;
+    }
+
+    void ApplySettingsToControls()
+    {
+        intervalUpDown.Value = settings.IntervalSeconds;
+        jitterTrackBar.Value = settings.IntervalJitterPercent;
+        distanceTrackBar.Value = settings.DistancePixels;
+        randomDirectionCheckBox.Checked = settings.RandomDirection;
+        returnToOriginCheckBox.Checked = settings.ReturnToOrigin;
+        smoothMovementCheckBox.Checked = settings.SmoothMovement;
+        edgePaddingUpDown.Value = settings.EdgePaddingPixels;
+        awakeRadio.Checked = settings.KeepAwakeOnly;
+        nudgeRadio.Checked = !settings.KeepAwakeOnly;
+        idleOnlyCheckBox.Checked = settings.NudgeOnlyWhenIdle;
+        idleThresholdUpDown.Value = settings.IdleThresholdSeconds;
+        startOnLaunchCheckBox.Checked = settings.StartOnLaunch;
+        showNotificationsCheckBox.Checked = settings.ShowTrayNotifications;
+
+        UpdateJitterLabel();
+        UpdateDistanceLabel();
+        UpdateIdleThresholdEnabled();
+    }
+
+    void WireEvents()
+    {
+        intervalUpDown.ValueChanged += (_, _) => Persist(() => settings.IntervalSeconds = (int)intervalUpDown.Value);
+
+        jitterTrackBar.ValueChanged += (_, _) =>
+        {
+            UpdateJitterLabel();
+            Persist(() => settings.IntervalJitterPercent = jitterTrackBar.Value);
+        };
+
+        distanceTrackBar.ValueChanged += (_, _) =>
+        {
+            UpdateDistanceLabel();
+            Persist(() => settings.DistancePixels = distanceTrackBar.Value);
+        };
+
+        randomDirectionCheckBox.CheckedChanged += (_, _) => Persist(() => settings.RandomDirection = randomDirectionCheckBox.Checked);
+        returnToOriginCheckBox.CheckedChanged += (_, _) => Persist(() => settings.ReturnToOrigin = returnToOriginCheckBox.Checked);
+        smoothMovementCheckBox.CheckedChanged += (_, _) => Persist(() => settings.SmoothMovement = smoothMovementCheckBox.Checked);
+        edgePaddingUpDown.ValueChanged += (_, _) => Persist(() => settings.EdgePaddingPixels = (int)edgePaddingUpDown.Value);
+        awakeRadio.CheckedChanged += (_, _) => Persist(() => settings.KeepAwakeOnly = awakeRadio.Checked);
+
+        idleOnlyCheckBox.CheckedChanged += (_, _) =>
+        {
+            UpdateIdleThresholdEnabled();
+            Persist(() => settings.NudgeOnlyWhenIdle = idleOnlyCheckBox.Checked);
+        };
+
+        idleThresholdUpDown.ValueChanged += (_, _) => Persist(() => settings.IdleThresholdSeconds = (int)idleThresholdUpDown.Value);
+        startOnLaunchCheckBox.CheckedChanged += (_, _) => Persist(() => settings.StartOnLaunch = startOnLaunchCheckBox.Checked);
+        showNotificationsCheckBox.CheckedChanged += (_, _) => Persist(() => settings.ShowTrayNotifications = showNotificationsCheckBox.Checked);
+
+        previewButton.Click += OnPreviewClicked;
+    }
+
+    void Persist(Action apply)
+    {
+        if (isLoading)
+        {
+            return;
+        }
+
+        apply();
+        SettingsStore.Save(settings);
     }
 
     async void OnPreviewClicked(object? sender, EventArgs e)
@@ -265,11 +319,11 @@ sealed class OptionsForm : Form
         try
         {
             NudgeOptions options = new(
-                distanceTrackBar.Value,
-                randomDirectionCheckBox.Checked,
-                returnToOriginCheckBox.Checked,
-                smoothMovementCheckBox.Checked,
-                (int)edgePaddingUpDown.Value);
+                settings.DistancePixels,
+                settings.RandomDirection,
+                settings.ReturnToOrigin,
+                settings.SmoothMovement,
+                settings.EdgePaddingPixels);
 
             await nudger.NudgeAsync(options);
         }

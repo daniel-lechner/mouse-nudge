@@ -2,18 +2,20 @@ namespace mouse_nudge;
 
 sealed class TrayAppContext : ApplicationContext
 {
-    const string IdleTooltip = "Mouse Nudge — stopped";
-    const string RunningTooltip = "Mouse Nudge — running";
+    const string StoppedTooltip = "Mouse Nudge — stopped";
 
     readonly NotifyIcon notifyIcon;
     readonly ToolStripMenuItem toggleItem;
     readonly Icon icon;
+    readonly AppSettings settings;
+    readonly NudgeScheduler scheduler;
+    readonly CountdownIconRenderer countdownRenderer = new();
 
-    bool isRunning;
     OptionsForm? optionsForm;
 
     public TrayAppContext()
     {
+        settings = SettingsStore.Load();
         icon = AppIcon.Load();
 
         toggleItem = new ToolStripMenuItem("Start nudging");
@@ -40,17 +42,58 @@ sealed class TrayAppContext : ApplicationContext
         };
         notifyIcon.DoubleClick += OnOptionsClicked;
 
-        notifyIcon.BalloonTipIcon = ToolTipIcon.Info;
-        notifyIcon.BalloonTipTitle = "Mouse Nudge";
-        notifyIcon.BalloonTipText = "Running in the system tray — right-click the icon for options.";
-        notifyIcon.ShowBalloonTip(3000);
+        scheduler = new NudgeScheduler(settings);
+        scheduler.StateChanged += OnSchedulerStateChanged;
+        scheduler.CountdownChanged += OnCountdownChanged;
+
+        ShowBalloon("Mouse Nudge", "Running in the system tray — right-click the icon for options.");
+
+        if (settings.StartOnLaunch)
+        {
+            scheduler.Start();
+        }
     }
 
     void OnToggleClicked(object? sender, EventArgs e)
     {
-        isRunning = !isRunning;
+        if (scheduler.IsRunning)
+        {
+            scheduler.Stop();
+            return;
+        }
+
+        scheduler.Start();
+    }
+
+    void OnSchedulerStateChanged(bool isRunning)
+    {
         toggleItem.Text = isRunning ? "Stop nudging" : "Start nudging";
-        notifyIcon.Text = isRunning ? RunningTooltip : IdleTooltip;
+
+        if (!isRunning)
+        {
+            notifyIcon.Icon = icon;
+            notifyIcon.Text = StoppedTooltip;
+            countdownRenderer.Release();
+        }
+
+        if (settings.ShowTrayNotifications)
+        {
+            ShowBalloon("Mouse Nudge", isRunning ? "Nudging started" : "Nudging stopped");
+        }
+    }
+
+    void OnCountdownChanged(int secondsRemaining)
+    {
+        countdownRenderer.Apply(notifyIcon, secondsRemaining);
+        notifyIcon.Text = $"Mouse Nudge — next nudge in {Math.Max(0, secondsRemaining)}s";
+    }
+
+    void ShowBalloon(string title, string text)
+    {
+        notifyIcon.BalloonTipIcon = ToolTipIcon.Info;
+        notifyIcon.BalloonTipTitle = title;
+        notifyIcon.BalloonTipText = text;
+        notifyIcon.ShowBalloonTip(3000);
     }
 
     void OnOptionsClicked(object? sender, EventArgs e)
@@ -67,7 +110,7 @@ sealed class TrayAppContext : ApplicationContext
             return;
         }
 
-        optionsForm = new OptionsForm();
+        optionsForm = new OptionsForm(settings);
         optionsForm.FormClosed += (_, _) => optionsForm = null;
         optionsForm.Show();
         optionsForm.Activate();
@@ -75,6 +118,7 @@ sealed class TrayAppContext : ApplicationContext
 
     void OnExitClicked(object? sender, EventArgs e)
     {
+        scheduler.Stop();
         notifyIcon.Visible = false;
         ExitThread();
     }
@@ -83,8 +127,11 @@ sealed class TrayAppContext : ApplicationContext
     {
         if (disposing)
         {
+            scheduler.Dispose();
             notifyIcon.Visible = false;
+            notifyIcon.Icon = null;
             notifyIcon.Dispose();
+            countdownRenderer.Dispose();
             icon.Dispose();
             optionsForm?.Dispose();
         }

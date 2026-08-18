@@ -44,8 +44,8 @@ The resulting `.exe` lands in `bin\Release\net10.0-windows\win-x64\publish\` and
 ## Status
 
 - [x] Blank WinForms project scaffolded and verified to run
-- [ ] Tray icon with context menu (start / stop / exit)
-- [ ] Timer-based random cursor nudge via `SendInput`
-- [ ] Configurable interval
-- [ ] Keep-awake-only mode via `SetThreadExecutionState`
+- [x] Tray icon with context menu (start / stop / exit)
+- [x] Timer-based random cursor nudge via `SendInput`
+- [x] Configurable interval
+- [x] Keep-awake-only mode via `SetThreadExecutionState`
 - [ ] Single-file publish verified on a clean machine
